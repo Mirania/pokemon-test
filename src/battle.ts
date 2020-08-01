@@ -3,10 +3,12 @@ import { random, randomElement, limit } from "./utils";
 import { isHit, Move, moves, createMove } from "./moves";
 import { affinity, Category } from "./types";
 import { Effect, createEffect, Behaviour } from "./effects";
+import { movePicker } from "./player";
 
 export class Battle {
     turnNumber: number;
     weather: Weather;
+    moveQueue: Move[];
     effects: Effect[];
     partyAllies: Pokemon[]; // in party, not in battle
     activeAllies: Pokemon[]; // in battle
@@ -20,6 +22,7 @@ export class Battle {
         this.partyEnemies = enemies.slice(battleSize, enemies.length);
         this.activeEnemies = enemies.slice(0, battleSize);
         this.weather = Weather.NONE;
+        this.moveQueue = [];
         this.effects = [];
         this.turnNumber = 1;
     }
@@ -83,6 +86,11 @@ export class Battle {
     }
 
     turn(): Outcome {
+        // clear queue and pick moves before turn begins
+        this.moveQueue = [];
+        for (const user of this.activePokemons())
+            this.moveQueue.push(movePicker(user, this));
+
         const order = this.sortBySpeed();
 
         for (const user of order) {
