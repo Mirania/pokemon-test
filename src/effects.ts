@@ -1,9 +1,14 @@
 import { Pokemon, Status } from "./pokemon";
 import { Battle } from "./battle";
-import { randomInt } from "./utils";
+import { randomInt, random } from "./utils";
+import { createMove, moves, Move } from "./moves";
 
 interface EffectData {
+    name: string,
     duration: number,
+    behaviour: Behaviour,
+    /** Whether effect should disappear if target is switched out. */
+    endOnSwitch: boolean,
     turn?: number,
     /** Source of the effect. */
     user?: Pokemon,
@@ -21,19 +26,28 @@ interface EffectData {
 export type Effect = EffectData & { [field: string]: any };
 
 export function createEffect(skeleton: Effect, user?: Pokemon, target?: Pokemon): Effect {
-    return { ...skeleton, user, target };
+    return { ...skeleton, target, user };
 }
 
-enum Behaviour {
-    PERSISTENT, END_ON_SWITCH
+/** This is slow and should mostly be used for debugging. */
+export function getEffect(name: string): Effect {
+    const result = effects.find(value => value.name === name);
+    if (!result) throw `'${name}' is not a valid effect.`;
+    return result;
+}
+
+export enum Behaviour {
+    START_OF_TURN, END_OF_TURN
 }
 
 export const effects: Effect[] = [
-    // frozen
     {
+        name: "Freeze",
         duration: undefined, // needs to be dynamically computed
+        behaviour: Behaviour.START_OF_TURN,
+        endOnSwitch: false,
         onCreation(effect, battle) {
-            effect.duration = randomInt(2, 6);
+            effect.duration = randomInt(1, 4);
             effect.target.status = Status.FROZEN;
             effect.target.canAttack = false;
             console.log(`${effect.target.name} became frozen!`);
@@ -47,9 +61,11 @@ export const effects: Effect[] = [
             console.log(`${effect.target.name} has defrosted.`)
         }
     },
-    // burn
     {
+        name: "Burn",
         duration: Infinity,
+        behaviour: Behaviour.END_OF_TURN,
+        endOnSwitch: false,
         onCreation(effect, battle) {
             console.log(`${effect.target.name} is now burning!`);
             effect.target.status = Status.BURNED;
@@ -59,10 +75,12 @@ export const effects: Effect[] = [
             effect.target.health -= effect.target.maxHealth / 16;
         }
     },
-    // toxic
     {
+        name: "Toxic Poison",
         turn: 1,
         duration: Infinity,
+        behaviour: Behaviour.END_OF_TURN,
+        endOnSwitch: false,
         onCreation(effect, battle) {
             console.log(`${effect.target.name} became poisoned!`);
             effect.target.status = Status.TOXIC;
@@ -70,6 +88,32 @@ export const effects: Effect[] = [
         execute(effect, battle) {
             console.log(`${effect.target.name} is suffering from poison.`);
             effect.target.health -= effect.target.maxHealth / 8 * effect.turn;
+        }
+    },
+    {
+        name: "Confusion",
+        duration: undefined,
+        behaviour: Behaviour.START_OF_TURN,
+        endOnSwitch: true,
+        selfHit: undefined,
+        onCreation(effect, battle) {
+            console.log(`${effect.target.name} became confused!`);
+            effect.duration = randomInt(2, 5);
+            effect.selfHit = createMove(moves[7]);
+        },
+        execute(effect, battle) {
+            console.log(`${effect.target.name} is confused.`);
+            effect.target.canAttack = true;
+
+            if (random() < 1/3) {
+                console.log(`${effect.target.name} hurt itself in its confusion!`);
+                (effect.selfHit as Move).execute(effect.selfHit, effect.user, effect.target, battle);
+                effect.target.canAttack = false;
+            }
+        },
+        onDeletion(effect, battle) {
+            console.log(`${effect.target.name} recovered from its confusion.`);
+            effect.target.canAttack = true;
         }
     }
 ];

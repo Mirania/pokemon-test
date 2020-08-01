@@ -1,8 +1,8 @@
-import { Pokemon, noMoves, effective, Status, Team } from "./pokemon";
+import { Pokemon, noMoves, effective, Status } from "./pokemon";
 import { random, randomElement, limit } from "./utils";
 import { isHit, Move, moves, createMove } from "./moves";
 import { affinity, Category } from "./types";
-import { Effect, createEffect } from "./effects";
+import { Effect, createEffect, Behaviour } from "./effects";
 
 export class Battle {
     turnNumber: number;
@@ -37,8 +37,33 @@ export class Battle {
 
     addEffect(effect: Effect, user?: Pokemon, target?: Pokemon): void {
         const addedEffect = createEffect(effect, user, target);
+        if (this.effectExists(addedEffect)) return;
+
         if (addedEffect.onCreation) addedEffect.onCreation(addedEffect, this);
         this.effects.push(addedEffect);
+    }
+
+    effectExists(effect: Effect): boolean {
+        return this.effects.some(e => e.name === effect.name && e.target === effect.target);
+    }
+
+    applyEffect(effect: Effect, index: number, order: Pokemon[]): void {
+        // effects can have 1 or many targets.
+        // if no target is defined, effect is assumed to target everyone in the field.
+        if (!effect.target || (this.isActive(effect.target) && effect.target.health > 0)) {
+            if (effect.duration === 0) {
+                if (effect.onDeletion) effect.onDeletion(effect, this);
+                this.effects.splice(index, 1);
+            } else if (effect.execute) effect.execute(effect, this);
+
+            this.checkDeath(order);
+
+            // enforce hp limits
+            for (const user of this.activePokemons())
+                user.health = Math.floor(limit(0, user.health, user.maxHealth));
+
+            this.printState();
+        }
     }
 
     init(): void {
@@ -64,8 +89,21 @@ export class Battle {
             if (user.health <= 0) continue;
 
             // apply abilities (start of turn)
+            // no checkDeath here. abilities are not expected to KO someone. this can change later
             if (user.ability.onTurnBeginning) user.ability.onTurnBeginning(user.ability, user, this);
 
+            // apply effects (start of turn)
+            for (let i = 0; i < this.effects.length; i++) {
+                const effect = this.effects[i];
+                if (effect.target === user && effect.behaviour === Behaviour.START_OF_TURN)
+                    this.applyEffect(effect, i, order);
+
+                // possible early exit (already won/lost)
+                const outcome = this.outcome();
+                if (outcome !== Outcome.UNDECIDED) return outcome;
+            }
+
+            // attempt to perform a move
             if (user.canAttack) {
                 const actives = this.activePokemons();
                 let move = createMove(randomElement(user.moves)); // copy of original object
@@ -91,7 +129,7 @@ export class Battle {
                 this.checkDeath(order);
 
                 // enforce hp/move limits
-                move.points = Math.floor(limit(0, move.points, move.maxPoints));
+                move.points = Math.floor(limit(0, move.points, move.maxPoints ?? move.points));
                 user.health = Math.floor(limit(0, user.health, user.maxHealth));
                 target.health = Math.floor(limit(0, target.health, target.maxHealth));
 
@@ -103,33 +141,18 @@ export class Battle {
             }
         }
 
-        // apply all effects after moves
-        // effects can have 1 or many targets
+        // apply effects (end of turn)
         for (let i = 0; i < this.effects.length; i++) {
             const effect = this.effects[i];
+            if (effect.behaviour === Behaviour.END_OF_TURN)
+                this.applyEffect(effect, i, order);
 
-            if (!effect.target || (this.isActive(effect.target) && effect.target.health > 0)) {
-                if (effect.execute) effect.execute(effect, this);
-                if (effect.turn !== undefined) effect.turn++;
-                effect.duration--;          
+            if (effect.turn !== undefined) effect.turn++;
+            effect.duration--;
 
-                if (effect.duration === 0) {
-                    if (effect.onDeletion) effect.onDeletion(effect, this);
-                    this.effects.splice(i, 1);
-                }
-
-                this.checkDeath(order);
-
-                // enforce hp limits
-                for (const user of this.activePokemons())
-                    user.health = Math.floor(limit(0, user.health, user.maxHealth));
-
-                this.printState();
-
-                // possible early exit (already won/lost)
-                const outcome = this.outcome();
-                if (outcome !== Outcome.UNDECIDED) return outcome;
-            }      
+            // possible early exit (already won/lost)
+            const outcome = this.outcome();
+            if (outcome !== Outcome.UNDECIDED) return outcome;
         }
 
         // apply abilities (end of turn)
@@ -166,8 +189,7 @@ export class Battle {
     printEffectiveness(move: Move, target: Pokemon): void {
         if (move.category === Category.STATUS) return;
 
-        const multiplier = affinity(move.type, target.primaryType) *
-            (target.secondaryType !== undefined ? affinity(move.type, target.secondaryType) : 1);
+        const multiplier = affinity(move.type, target.primaryType) * affinity(move.type, target.secondaryType);
 
         if (multiplier === 0) console.log("But it had no effect!");
         else if (multiplier >= 2) console.log("It's super effective!");

@@ -11,7 +11,7 @@ interface MoveData {
     power: number,
     accuracy: number,
     points: number,
-    maxPoints: number,
+    maxPoints?: number,
     /** Use a move. */
     execute: (move: Move, user: Pokemon, target: Pokemon, battle: Battle) => void,
     /* On move being used. */
@@ -27,10 +27,11 @@ export function createMove(skeleton: Move): Move {
     return { ...skeleton, maxPoints: skeleton.points };
 }
 
-export function modifyPoints(move: Move, value: number): void {
-    move.points += Math.floor(value);
-    if (move.points < 0) move.points = 0;
-    else if (move.points > move.maxPoints) move.points = move.maxPoints;
+/** This is slow and should mostly be used for debugging. */
+export function getMove(name: string): Move {
+    const result = moves.find(value => value.name === name);
+    if (!result) throw `'${name}' is not a valid move.`;
+    return result;
 }
 
 export function isHit(move: Move, user: Pokemon, target: Pokemon): boolean {
@@ -50,7 +51,7 @@ export function calcDamage(move: Move, user: Pokemon, target: Pokemon, battle: B
     const rng = random(0.85, 1);
     const stab = (move.type === user.primaryType || move.type === user.secondaryType) ? 1.5 : 1;
     const multPrimary = affinity(move.type, target.primaryType);
-    const multSecondary = target.secondaryType !== undefined ? affinity(move.type, target.secondaryType) : 1;
+    const multSecondary = affinity(move.type, target.secondaryType);
     const burn = move.category === Category.PHYSICAL && user.status === Status.BURNED ? 0.5 : 1;
 
     return (((((2 * user.level / 5) + 2) * move.power * attack / defense) / 50) + 2) * 
@@ -88,7 +89,6 @@ export const moves: Move[] = [
         power: 50,
         accuracy: 100,
         points: Infinity,
-        maxPoints: Infinity,
         execute(move, user, target, battle) {
             const damage = calcDamage(move, user, target, battle);
             target.health -= damage;
@@ -107,7 +107,6 @@ export const moves: Move[] = [
         power: 40,
         accuracy: 100,
         points: 35,
-        maxPoints: 35,
         execute(move, user, target, battle) {
             target.health -= calcDamage(move, user, target, battle);
         }
@@ -119,7 +118,6 @@ export const moves: Move[] = [
         power: 40,
         accuracy: 100,
         points: 35,
-        maxPoints: 35,
         execute(move, user, target, battle) {
             target.health -= calcDamage(move, user, target, battle);
         }
@@ -131,7 +129,6 @@ export const moves: Move[] = [
         power: 85,
         accuracy: 90,
         points: 10,
-        maxPoints: 10,
         execute(move, user, target, battle) {
             user.critStage += 2;
             target.health -= calcDamage(move, user, target, battle);
@@ -145,7 +142,6 @@ export const moves: Move[] = [
         power: 0,
         accuracy: 85,
         points: 15,
-        maxPoints: 15,
         execute(move, user, target, battle) {
             if (target.status === Status.NONE)
                 battle.addEffect(effects[1], user, target);
@@ -159,12 +155,34 @@ export const moves: Move[] = [
         power: 110,
         accuracy: 70,
         points: 5,
-        maxPoints: 5,
         execute(move, user, target, battle) {
             target.health -= calcDamage(move, user, target, battle);
-            if (target.status === Status.NONE && random() <= 1) {
+            if (target.status === Status.NONE && random() <= 1)
                 battle.addEffect(effects[0], user, target);
-            }
+        }
+    },
+    {
+        name: "Dizzy Punch",
+        type: Type.NORMAL,
+        category: Category.PHYSICAL,
+        power: 70,
+        accuracy: 100,
+        points: 10,
+        execute(move, user, target, battle) {
+            target.health -= calcDamage(move, user, target, battle);
+            if (random() <= 1)
+                battle.addEffect(effects[3], user, target);
+        }
+    },
+    {
+        name: "Confusion Hit",
+        type: undefined,
+        category: Category.PHYSICAL,
+        power: 40,
+        accuracy: Infinity,
+        points: Infinity,
+        execute(move, user, target, battle) {
+            target.health -= calcDamage(move, user, target, battle);
         }
     }
 ];

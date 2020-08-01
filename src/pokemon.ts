@@ -1,9 +1,7 @@
-import { Move } from "./moves";
+import { Move, createMove } from "./moves";
 import { Type } from "./types";
-import { Battle } from "./battle";
 import { limit } from "./utils";
-import { Effect } from "./effects";
-import { Ability } from "./abilities";
+import { Ability, createAbility } from "./abilities";
 
 export interface PokemonData {
     name: string,
@@ -48,7 +46,6 @@ export type Pokemon = PokemonData & {
     /** Stat stage. */
     critStage: number,
     status: Status,
-    effects: Effect[],
     canAttack: boolean
 }
 
@@ -66,8 +63,8 @@ export function createPokemon(data: PokemonData): Pokemon {
         speed: data.speed,
         primaryType: data.primaryType,
         secondaryType: data.secondaryType,
-        ability: data.ability,
-        moves: data.moves,
+        ability: createAbility(data.ability),
+        moves: data.moves.map(move => createMove(move)),
         team: data.team,
         attackStage: 0,
         defenseStage: 0,
@@ -78,7 +75,6 @@ export function createPokemon(data: PokemonData): Pokemon {
         evasionStage: 0,
         critStage: 0,
         status: Status.NONE,
-        effects: [],
         canAttack: true
     };
 }
@@ -102,11 +98,6 @@ export function effectiveAccuracy(stage: number): number {
     else if (stage > 0) num += stage;
 
     return num/den;
-}
-
-export function modifyHealth(user: Pokemon, value: number): void {
-    user.health += Math.floor(value);
-    user.health = limit(0, user.health, user.maxHealth);
 }
 
 export function noMoves(user: Pokemon): boolean {

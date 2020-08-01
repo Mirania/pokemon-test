@@ -22,7 +22,8 @@ const matrix: number[][] = [
 /* Ice */   [1,     2,      0.5,    1,      1,      2,      2,      0.5 ]
 ];
 
-/** Damage multiplier when attacking a certain type. */
-export function affinity(attacker: Type, defender: Type) {
+/** Damage multiplier when attacking a certain type. Returns 1 if either type is undefined. */
+export function affinity(attacker: Type, defender: Type): number {
+    if (attacker === undefined || defender === undefined) return 1;
     return matrix[attacker][defender];
 }

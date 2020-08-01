@@ -23,6 +23,13 @@ export function createAbility(skeleton: Ability): Ability {
     return { ...skeleton };
 }
 
+/** This is slow and should mostly be used for debugging. */
+export function getAbility(name: string): Ability {
+    const result = abilities.find(value => value.name === name);
+    if (!result) throw `'${name}' is not a valid ability.`;
+    return result;
+}
+
 export const abilities: Ability[] = [
     {
         name: "Intimidate",

@@ -17,7 +17,7 @@ let team: Pokemon[] = [
         speed: 10,
         primaryType: Type.NORMAL,
         ability: abilities[1],
-        moves: [moves[4]],
+        moves: [moves[6]],
         team: Team.ALLY
     })
 ];
