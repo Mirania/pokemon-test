@@ -19,6 +19,21 @@ let team: Pokemon[] = [
         ability: abilities[1],
         moves: [moves[8], moves[1]],
         team: Team.ALLY
+    }),
+    createPokemon({
+        name: "Ally2",
+        gender: Gender.MALE,
+        level: 85,
+        health: 2,
+        attack: 100,
+        defense: 100,
+        spAttack: 100,
+        spDefense: 100,
+        speed: 91,
+        primaryType: Type.NORMAL,
+        ability: abilities[1],
+        moves: [getMove("Scratch")],
+        team: Team.ALLY
     })
 ];
 

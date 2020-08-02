@@ -8,17 +8,22 @@ export enum Action {
     FIGHT = "Fight", SWITCH = "Switch", ITEM = "Item", RUN = "Run"
 }
 
-export function actionPicker(): Action {
+export function actionPicker(user: Pokemon): Action {
     const optionList = [Action.FIGHT, Action.SWITCH, Action.RUN];
     let choice: Action;
 
-    console.log("Select your action (indexes 0-2):");
+    if (user.team === Team.ALLY) {
+        console.log("Select your action (indexes 0-2):");
 
-    for (let i=0; i<optionList.length; i++)
-        console.log(`${i} - ${optionList[i]}`);
-    do {
-        choice = optionList[prompt("> ")];
-    } while (!choice);
+        for (let i=0; i<optionList.length; i++)
+            console.log(`${i} - ${optionList[i]}`);
+        do {
+            choice = optionList[prompt("> ")];
+        } while (!choice);
+    } else {
+        // AI's selection
+        choice = Action.FIGHT;
+    }
 
     return choice;
 }
@@ -81,16 +86,13 @@ export function canSwitch(switchedOut: Pokemon, battle: Battle): boolean {
     return partyList.filter(pkmn => pkmn.health > 0).length > 0;
 }
 
-export function switchPicker(switchedOut: Pokemon, battle: Battle): {switchedIn: Pokemon} {
-    let switchedIn: Pokemon;
+export function switchPicker(switchedOut: Pokemon, battle: Battle): Pokemon {
+    let choice: Pokemon;
 
     const partyList = switchedOut.team === Team.ALLY ? battle.partyAllies : battle.partyEnemies;
     const availableList = partyList.filter(pkmn => pkmn.health > 0);
-    
-    if (availableList.length === 0) {
-        console.log(`No other Pokemons are in a condition to fight!`);
-        return undefined;
-    } else {
+
+    if (switchedOut.team === Team.ALLY) {
         console.log(`Select your Pokemon (indexes 0-${availableList.length - 1}):`);
 
         for (let i=0; i<availableList.length; i++) {
@@ -100,9 +102,12 @@ export function switchPicker(switchedOut: Pokemon, battle: Battle): {switchedIn:
             console.log(`${i} - ${id} [${hp}] ${option.status}`);
         }
         do {
-            switchedIn = availableList[prompt("> ")];
-        } while (!switchedIn);
-
-        return { switchedIn };
+            choice = availableList[prompt("> ")];
+        } while (!choice);
+    } else {
+        // AI's selection
+        choice = randomElement(availableList);
     }
+
+    return choice;
 }

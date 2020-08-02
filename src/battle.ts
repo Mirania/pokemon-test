@@ -14,6 +14,8 @@ export class Battle {
     activeAllies: Pokemon[]; // in battle
     partyEnemies: Pokemon[]; // in party, not in battle
     activeEnemies: Pokemon[]; // in battle
+    moveQueue: { move: Move, target: Pokemon }[];
+    switchQueue: { switchedOut: Pokemon, switchedIn: Pokemon }[];
 
     /** Battle size: 1 = 1v1, 2 = 2v2, etc. */
     constructor(allies: Pokemon[], enemies: Pokemon[], battleSize: number) {
@@ -25,6 +27,8 @@ export class Battle {
         this.effects = [];
         this.battleSize = battleSize;
         this.turnNumber = 1;
+        this.moveQueue = [];
+        this.switchQueue = [];
     }
 
     sortBySpeed(): Pokemon[] {
@@ -73,15 +77,35 @@ export class Battle {
         }
     }
 
-    switchPokemon(switchedOut: Pokemon): void {
-        const {switchedIn} = canSwitch(switchedOut, this) ? switchPicker(switchedOut, this) : undefined;
+    switchPokemon(switchedOut: Pokemon, switchedIn: Pokemon, order: Pokemon[]): Pokemon {
+        // apply ability (on switch out)
+        switchedOut.ability.onSwitchOut?.(switchedOut.ability, switchedOut, this);
+
+        // apply effects (on switch out)
+        for (let i = 0; i < this.effects.length; i++) {
+            const effect = this.effects[i];
+            if (effect.behaviour === Behaviour.ON_SWITCH_OUT)
+                this.applyEffect(effect, i, order);
+        }
+
+        this.checkDeath(order);
+
+        if (switchedOut.team === Team.ALLY) {
+            console.log(`You withdrew ${switchedOut.name}!`);
+            console.log(`Go, ${switchedIn.name}!`);
+        } else {
+            console.log(`${switchedOut.name} was withdrawn!`);
+            console.log(`${switchedIn.name} was sent out!`);
+        }
+        
+        // swap spots between field and party
         const activeList = switchedOut.team === Team.ALLY ? this.activeAllies : this.activeEnemies;
         const partyList = switchedOut.team === Team.ALLY ? this.partyAllies : this.partyEnemies;
         activeList[activeList.indexOf(switchedOut)] = switchedIn;
-        partyList.push(switchedOut);
-        
-        const order = this.sortBySpeed();
+        partyList[partyList.indexOf(switchedIn)] = switchedOut;
+        order[order.indexOf(switchedOut)] = switchedIn;
 
+        // apply ability (on switch in)
         switchedIn.ability.onSwitchIn?.(switchedIn.ability, switchedIn, this);
 
         // apply effects (on switch in)
@@ -90,6 +114,15 @@ export class Battle {
             if (effect.behaviour === Behaviour.ON_SWITCH_IN)
                 this.applyEffect(effect, i, order);
         }
+
+        this.checkDeath(order);
+
+        // update move targets so they do not fail
+        for (const moveCommand of this.moveQueue) {
+            if (moveCommand && moveCommand.target === switchedOut) moveCommand.target = switchedIn;
+        }
+
+        return switchedIn;
     }
 
     init(): void {
@@ -116,36 +149,47 @@ export class Battle {
 
         const order = this.sortBySpeed();
 
-        // clear queues and select actions before turn begins
-        const moveQueue: {move: Move, target: Pokemon}[] = [];
-        const switchQueue: {switchedIn: Pokemon}[] = [];
+        // option selection - fight, run, etc.
+        this.moveQueue = [];
+        this.switchQueue = [];
         for (const user of order) {
-            moveQueue.push(movePicker(user, this));
             // user is forced to switch
-            /*if (user.health <= 0) {
-                moveQueue.push();
-                switchQueue.push(canSwitch(user, this) ? switchPicker(user, this) : undefined);
+            if (user.health <= 0) {
+                const switchedIn = switchPicker(user, this);
+                this.switchQueue.push({switchedOut: user, switchedIn});
+                this.moveQueue.push(movePicker(switchedIn, this));
                 continue;
             }
 
-            const action = actionPicker();
+            // user is free to choose what to do
+            let action = actionPicker(user);
 
-            // early exit
-            if (action === Action.RUN) return Outcome.ESCAPED;
+            while (action === Action.SWITCH && !canSwitch(user, this)) {
+                console.log("No other Pokemons are in a condition to fight!");
+                action = actionPicker(user);
+            }
 
-            
-
-            //while (action === Action.SWITCH && !canSwitch())
-
-            // keep correct orders even if some do not choose that action
-            moveQueue.push(action === Action.FIGHT ? movePicker(user, this) : undefined);
-            if ()
-            switchQueue.push(action === Action.SWITCH ? switchPicker(user, this) : undefined);*/
+            switch (action) {
+                case Action.FIGHT:
+                    this.moveQueue.push(movePicker(user, this));
+                    this.switchQueue.push(undefined); // create an empty position in the list
+                    break;
+                case Action.SWITCH:
+                    this.moveQueue.push(undefined); // create an empty position in the list
+                    this.switchQueue.push({switchedOut: user, switchedIn: switchPicker(user, this)});
+                    break;
+                case Action.RUN:
+                    // early exit
+                    return Outcome.ESCAPED;
+            }
         }
 
         // begin turn
         for (let i=0; i<order.length; i++) {
-            const user = order[i];
+            // if there's a switch pending, do it, otherwise proceed as normal
+            const user = this.switchQueue[i] 
+                ? this.switchPokemon(this.switchQueue[i].switchedOut, this.switchQueue[i].switchedIn, order) 
+                : order[i];
             if (user.health <= 0) continue;
 
             // apply abilities (start of turn)
@@ -164,8 +208,8 @@ export class Battle {
             if (outcome !== Outcome.UNDECIDED) return outcome;
 
             // attempt to perform a move
-            if (user.canAttack) {
-                const {move, target} = moveQueue[i];
+            if (user.canAttack && this.moveQueue[i]) {
+                const {move, target} = this.moveQueue[i];
                 
                 console.log(`${user.name} used ${move.name}!`);
                 move.points--;
