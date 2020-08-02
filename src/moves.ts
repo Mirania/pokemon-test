@@ -2,7 +2,7 @@ import { Pokemon, Status, effective, effectiveAccuracy } from "./pokemon";
 import { Battle, Weather } from "./battle";
 import { random, limit } from "./utils";
 import { Type, Category, affinity } from "./types";
-import { effects } from "./effects";
+import { effects, getEffect } from "./effects";
 
 interface MoveData {
     name: string,
@@ -16,8 +16,8 @@ interface MoveData {
     execute: (move: Move, user: Pokemon, target: Pokemon, battle: Battle) => void,
     /* On move being used. */
     onUse?: (move: Move, user: Pokemon, target: Pokemon, battle: Battle) => void,
-    /** On move connecting. */
-    onHitting?: (move: Move, user: Pokemon, target: Pokemon, battle: Battle) => void
+    /** On move missing. */
+    onMiss?: (move: Move, user: Pokemon, target: Pokemon, battle: Battle) => void
 }
 
 /** Any additional information a move may want to store. */
@@ -54,8 +54,11 @@ export function calcDamage(move: Move, user: Pokemon, target: Pokemon, battle: B
     const multSecondary = affinity(move.type, target.secondaryType);
     const burn = move.category === Category.PHYSICAL && user.status === Status.BURNED ? 0.5 : 1;
 
-    return (((((2 * user.level / 5) + 2) * move.power * attack / defense) / 50) + 2) * 
+    const total = (((((2 * user.level / 5) + 2) * move.power * attack / defense) / 50) + 2) * 
         weather * (crit ? 1.5 : 1) * rng * stab * multPrimary * multSecondary * burn;
+
+    // don't overkill
+    return Math.min(total, target.health);
 }
 
 function weatherAffinity(move: Move, battle: Battle): number {
@@ -92,12 +95,9 @@ export const moves: Move[] = [
         execute(move, user, target, battle) {
             const damage = calcDamage(move, user, target, battle);
             target.health -= damage;
-            move.damageDealt = damage;
-        },
-        damageDealt: undefined,
-        onHitting(self, user, target, battle) {
+            
             console.log(`${user.name} received some recoil damage.`);
-            user.health -= self.damageDealt * 0.25;
+            user.health -= damage * 0.25;
         }
     },
     {
@@ -133,6 +133,9 @@ export const moves: Move[] = [
             user.critStage += 2;
             target.health -= calcDamage(move, user, target, battle);
             user.critStage -= 2;
+
+            if (target.status === Status.NONE && random() <= 0.1)
+                battle.addEffect(getEffect("Burn"), user, target);
         }
     },
     {
@@ -144,7 +147,7 @@ export const moves: Move[] = [
         points: 15,
         execute(move, user, target, battle) {
             if (target.status === Status.NONE)
-                battle.addEffect(effects[1], user, target);
+                battle.addEffect(getEffect("Burn"), user, target);
             else console.log("But it failed!");
         }
     },
@@ -157,8 +160,8 @@ export const moves: Move[] = [
         points: 5,
         execute(move, user, target, battle) {
             target.health -= calcDamage(move, user, target, battle);
-            if (target.status === Status.NONE && random() <= 1)
-                battle.addEffect(effects[0], user, target);
+            if (target.status === Status.NONE && random() <= 0.1)
+                battle.addEffect(getEffect("Freeze"), user, target);
         }
     },
     {
@@ -167,11 +170,10 @@ export const moves: Move[] = [
         category: Category.PHYSICAL,
         power: 70,
         accuracy: 100,
-        points: 10,
+        points: 1,
         execute(move, user, target, battle) {
             target.health -= calcDamage(move, user, target, battle);
-            if (random() <= 1)
-                battle.addEffect(effects[3], user, target);
+            if (random() <= 0.2) battle.addEffect(getEffect("Confusion"), user, target);
         }
     },
     {
@@ -183,6 +185,17 @@ export const moves: Move[] = [
         points: Infinity,
         execute(move, user, target, battle) {
             target.health -= calcDamage(move, user, target, battle);
+        }
+    },
+    {
+        name: "Destiny Bond",
+        type: undefined,
+        category: Category.STATUS,
+        power: 0,
+        accuracy: Infinity,
+        points: 5,
+        execute(move, user, target, battle) {
+            battle.addEffect(getEffect("Destiny Bond"), user, target);
         }
     }
 ];

@@ -1,7 +1,8 @@
-import { Pokemon, Status } from "./pokemon";
+import { Pokemon, Status, Team } from "./pokemon";
 import { Battle } from "./battle";
 import { randomInt, random } from "./utils";
 import { createMove, moves, Move } from "./moves";
+import { Category } from "./types";
 
 interface EffectData {
     name: string,
@@ -18,7 +19,7 @@ interface EffectData {
     onCreation?: (effect: Effect, battle: Battle) => void,
     /** Performed every turn. */
     execute?: (effect: Effect, battle: Battle) => void,
-    /** When effect is removed or its duration ends. */
+    /** When effect is removed or is or is on its final turn. */
     onDeletion?: (effect: Effect, battle: Battle) => void
 }
 
@@ -37,7 +38,7 @@ export function getEffect(name: string): Effect {
 }
 
 export enum Behaviour {
-    START_OF_TURN, END_OF_TURN
+    START_OF_TURN, END_OF_TURN, ON_DEATH, ON_SWITCH_IN, ON_SWITCH_OUT
 }
 
 export const effects: Effect[] = [
@@ -115,5 +116,21 @@ export const effects: Effect[] = [
             console.log(`${effect.target.name} recovered from its confusion.`);
             effect.target.canAttack = true;
         }
-    }
+    },
+    {
+        name: "Destiny Bond",
+        duration: 0,
+        behaviour: Behaviour.ON_DEATH,
+        endOnSwitch: true,
+        onCreation(effect, battle) {
+            console.log(`${effect.user.name} wants to take its foe down with it!`);
+        },
+        onDeletion(effect, battle) {
+            const {move, user} = effect.user.lastHitBy;
+            if (move.category !== Category.STATUS && user.team === Team.ENEMY) {
+                console.log(`${effect.user.name}'s Destiny Bond took down ${effect.target.name}!`);
+                effect.target.health = 0;
+            }
+        }
+    },
 ];

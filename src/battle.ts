@@ -1,14 +1,14 @@
-import { Pokemon, noMoves, effective, Status } from "./pokemon";
+import { Pokemon, noMoves, effective, Status, Team } from "./pokemon";
 import { random, randomElement, limit } from "./utils";
 import { isHit, Move, moves, createMove } from "./moves";
 import { affinity, Category } from "./types";
 import { Effect, createEffect, Behaviour } from "./effects";
-import { movePicker } from "./player";
+import { movePicker, actionPicker, Action, switchPicker, canSwitch } from "./player";
 
 export class Battle {
+    battleSize: number;
     turnNumber: number;
     weather: Weather;
-    moveQueue: Move[];
     effects: Effect[];
     partyAllies: Pokemon[]; // in party, not in battle
     activeAllies: Pokemon[]; // in battle
@@ -22,8 +22,8 @@ export class Battle {
         this.partyEnemies = enemies.slice(battleSize, enemies.length);
         this.activeEnemies = enemies.slice(0, battleSize);
         this.weather = Weather.NONE;
-        this.moveQueue = [];
         this.effects = [];
+        this.battleSize = battleSize;
         this.turnNumber = 1;
     }
 
@@ -42,7 +42,7 @@ export class Battle {
         const addedEffect = createEffect(effect, user, target);
         if (this.effectExists(addedEffect)) return;
 
-        if (addedEffect.onCreation) addedEffect.onCreation(addedEffect, this);
+        addedEffect.onCreation?.(addedEffect, this);
         this.effects.push(addedEffect);
     }
 
@@ -50,22 +50,45 @@ export class Battle {
         return this.effects.some(e => e.name === effect.name && e.target === effect.target);
     }
 
+    // it's ok to run all effects without checking outcome.
+    // they are only applied under valid circumstances.
     applyEffect(effect: Effect, index: number, order: Pokemon[]): void {
         // effects can have 1 or many targets.
         // if no target is defined, effect is assumed to target everyone in the field.
-        if (!effect.target || (this.isActive(effect.target) && effect.target.health > 0)) {
+        if (!effect.target || (this.isActive(effect.target) && 
+            effect.target.health > 0 || effect.behaviour === Behaviour.ON_DEATH)) {
             if (effect.duration === 0) {
-                if (effect.onDeletion) effect.onDeletion(effect, this);
+                effect.onDeletion?.(effect, this);
                 this.effects.splice(index, 1);
-            } else if (effect.execute) effect.execute(effect, this);
-
-            this.checkDeath(order);
+            } else effect.execute?.(effect, this);
 
             // enforce hp limits
             for (const user of this.activePokemons())
                 user.health = Math.floor(limit(0, user.health, user.maxHealth));
 
+            this.checkDeath(order);
+
+            console.log(`${effect.name} effect:`);
             this.printState();
+        }
+    }
+
+    switchPokemon(switchedOut: Pokemon): void {
+        const {switchedIn} = canSwitch(switchedOut, this) ? switchPicker(switchedOut, this) : undefined;
+        const activeList = switchedOut.team === Team.ALLY ? this.activeAllies : this.activeEnemies;
+        const partyList = switchedOut.team === Team.ALLY ? this.partyAllies : this.partyEnemies;
+        activeList[activeList.indexOf(switchedOut)] = switchedIn;
+        partyList.push(switchedOut);
+        
+        const order = this.sortBySpeed();
+
+        switchedIn.ability.onSwitchIn?.(switchedIn.ability, switchedIn, this);
+
+        // apply effects (on switch in)
+        for (let i = 0; i < this.effects.length; i++) {
+            const effect = this.effects[i];
+            if (effect.behaviour === Behaviour.ON_SWITCH_IN)
+                this.applyEffect(effect, i, order);
         }
     }
 
@@ -73,8 +96,10 @@ export class Battle {
         const order = this.sortBySpeed();
 
         for (const user of order) {
-            if (user.ability.onSwitchIn) user.ability.onSwitchIn(user.ability, user, this);
+            user.ability.onSwitchIn?.(user.ability, user, this);
         }
+
+        this.printState();
 
         let state: Outcome;
         do {
@@ -82,69 +107,92 @@ export class Battle {
         } while ((state = this.turn()) === Outcome.UNDECIDED);
 
         if (state === Outcome.WIN) console.log("You win!");
-        else console.log("You're out of Pokemons!");
+        else if (state === Outcome.LOSS) console.log("You're out of Pokemons!");
+        else console.log("Got away safely!");
     }
 
     turn(): Outcome {
-        // clear queue and pick moves before turn begins
-        this.moveQueue = [];
-        for (const user of this.activePokemons())
-            this.moveQueue.push(movePicker(user, this));
+        if (this.weather !== Weather.NONE) console.log(`It's ${this.weather}.`);
 
         const order = this.sortBySpeed();
 
+        // clear queues and select actions before turn begins
+        const moveQueue: {move: Move, target: Pokemon}[] = [];
+        const switchQueue: {switchedIn: Pokemon}[] = [];
         for (const user of order) {
+            moveQueue.push(movePicker(user, this));
+            // user is forced to switch
+            /*if (user.health <= 0) {
+                moveQueue.push();
+                switchQueue.push(canSwitch(user, this) ? switchPicker(user, this) : undefined);
+                continue;
+            }
+
+            const action = actionPicker();
+
+            // early exit
+            if (action === Action.RUN) return Outcome.ESCAPED;
+
+            
+
+            //while (action === Action.SWITCH && !canSwitch())
+
+            // keep correct orders even if some do not choose that action
+            moveQueue.push(action === Action.FIGHT ? movePicker(user, this) : undefined);
+            if ()
+            switchQueue.push(action === Action.SWITCH ? switchPicker(user, this) : undefined);*/
+        }
+
+        // begin turn
+        for (let i=0; i<order.length; i++) {
+            const user = order[i];
             if (user.health <= 0) continue;
 
             // apply abilities (start of turn)
             // no checkDeath here. abilities are not expected to KO someone. this can change later
-            if (user.ability.onTurnBeginning) user.ability.onTurnBeginning(user.ability, user, this);
+            user.ability.onTurnBeginning?.(user.ability, user, this);
 
             // apply effects (start of turn)
             for (let i = 0; i < this.effects.length; i++) {
                 const effect = this.effects[i];
                 if (effect.target === user && effect.behaviour === Behaviour.START_OF_TURN)
                     this.applyEffect(effect, i, order);
-
-                // possible early exit (already won/lost)
-                const outcome = this.outcome();
-                if (outcome !== Outcome.UNDECIDED) return outcome;
             }
+
+            // possible early exit (already won/lost)
+            const outcome = this.checkVictory();
+            if (outcome !== Outcome.UNDECIDED) return outcome;
 
             // attempt to perform a move
             if (user.canAttack) {
-                const actives = this.activePokemons();
-                let move = createMove(randomElement(user.moves)); // copy of original object
-                let target = user === actives[0] ? actives[1] : actives[0];
-
-                if (move.points <= 0) {
-                    console.log(`Cannot use ${move.name} right now!`);
-                    move = noMoves(user) ? moves[0] : randomElement(user.moves);
-                }
+                const {move, target} = moveQueue[i];
                 
                 console.log(`${user.name} used ${move.name}!`);
                 move.points--;
 
-                if (move.onUse) move.onUse(move, user, target, this);
+                move.onUse?.(move, user, target, this);
                 if (isHit(move, user, target)) {
                     this.printEffectiveness(move, target);
-                    move.execute(move, user, target, this);
-                    if (move.onHitting) move.onHitting(move, user, target, this);
+                    if (target && target.health > 0) {
+                        move.execute(move, user, target, this);
+                        target.lastHitBy = {move, user};
+                    }
+                    else console.log("But it failed!");
                 } else {
+                    move.onMiss?.(move, user, target, this);
                     console.log("But it missed!");
                 }
-
-                this.checkDeath(order);
 
                 // enforce hp/move limits
                 move.points = Math.floor(limit(0, move.points, move.maxPoints ?? move.points));
                 user.health = Math.floor(limit(0, user.health, user.maxHealth));
                 target.health = Math.floor(limit(0, target.health, target.maxHealth));
 
+                this.checkDeath(order);
                 this.printState();
 
                 // possible early exit (already won/lost)
-                const outcome = this.outcome();
+                const outcome = this.checkVictory();
                 if (outcome !== Outcome.UNDECIDED) return outcome;
             }
         }
@@ -157,31 +205,37 @@ export class Battle {
 
             if (effect.turn !== undefined) effect.turn++;
             effect.duration--;
-
-            // possible early exit (already won/lost)
-            const outcome = this.outcome();
-            if (outcome !== Outcome.UNDECIDED) return outcome;
         }
 
         // apply abilities (end of turn)
         for (const user of order) {
             if (user.health > 0) {
-                if (user.ability.onTurnEnding) user.ability.onTurnEnding(user.ability, user, this);
+                user.ability.onTurnEnding?.(user.ability, user, this);
                 if (user.ability.turn) user.ability.turn++;
             }
         }
 
-        return this.outcome();
+        return this.checkVictory();
     }
 
     checkDeath(order: Pokemon[]): void {
         for (let i=0; i<order.length; i++) {
             const user = order[i];
 
-            if (user.health <= 0) {
-                console.log(`${user.name} fainted!`);
-                if (user.ability.onDeath) user.ability.onDeath(user.ability, user, this);
+            // if 0 hp but not fainted, we haven't yet processed onDeath events for them
+            if (user.health <= 0 && user.status !== Status.FAINTED) {
+                console.log(`${user.name} fainted!`);    
                 user.status = Status.FAINTED;
+
+                // apply effects (on death)
+                for (let i = 0; i < this.effects.length; i++) {
+                    const effect = this.effects[i];
+                    if (effect.user === user && effect.behaviour === Behaviour.ON_DEATH)
+                        this.applyEffect(effect, i, order);
+                }
+
+                // apply abilities (on death)
+                user.ability.onDeath?.(user.ability, user, this);  
             }
         }
     }
@@ -203,7 +257,7 @@ export class Battle {
         else if (multiplier >= 2) console.log("It's super effective!");
     }
 
-    outcome(): Outcome {
+    checkVictory(): Outcome {
         if ([...this.partyAllies, ...this.activeAllies].every(pkmn => pkmn.health <= 0))
             return Outcome.LOSS;
         if ([...this.partyEnemies, ...this.activeEnemies].every(pkmn => pkmn.health <= 0))
@@ -215,14 +269,14 @@ export class Battle {
     printState(): void {
         for (const pokemon of this.activePokemons()) {
             const id = `${pokemon.name}${pokemon.gender} Lv. ${pokemon.level}`;
-            const hp = `[${pokemon.health}/${pokemon.maxHealth}]`;
-            console.log(`${id}${" ".repeat(20 - id.length)} ${hp} ${pokemon.status}`);
+            const hp = `${Math.floor(pokemon.health)}/${Math.floor(pokemon.maxHealth)}`;
+            console.log(`${id}${" ".repeat(20 - id.length)} [${hp}] ${pokemon.status}`);
         }
     }
 }
 
 enum Outcome {
-    WIN, UNDECIDED, LOSS
+    WIN, UNDECIDED, LOSS, ESCAPED
 }
 
 export enum Weather {
