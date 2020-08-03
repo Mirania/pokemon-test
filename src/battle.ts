@@ -2,7 +2,7 @@ import { Pokemon, effective, Status, Team } from "./pokemon";
 import { random, limit } from "./utils";
 import { isHit, Move } from "./moves";
 import { affinity, Category } from "./types";
-import { Effect, createEffect, Trigger, Targeting } from "./effects";
+import { Effect, createEffect, Trigger, EffectTargeting } from "./effects";
 import { movePicker, actionPicker, Action, switchPicker, canSwitch } from "./player";
 
 export type EffectCommand = { effect: Effect, user?: Pokemon, target?: Pokemon };
@@ -72,24 +72,24 @@ export class Battle {
         const targeting = effectCommand.effect.targeting;
 
         switch (targeting) {
-            case Targeting.SELF:
+            case EffectTargeting.SELF:
                 targets = [effectCommand.user];
                 break;
-            case Targeting.SINGLE:
+            case EffectTargeting.SINGLE:
                 targets = this.isActive(effectCommand.target) ? [effectCommand.target] : [];
                 break;
-            case Targeting.ALLIES:
+            case EffectTargeting.ALLIES:
                 targets = effectCommand.user.team === Team.ALLY ? this.activeAllies : this.activeEnemies;
                 break;
-            case Targeting.FOES:
+            case EffectTargeting.FOES:
                 targets = effectCommand.user.team === Team.ALLY ? this.activeEnemies : this.activeAllies;
                 break;
-            case Targeting.ALL:
+            case EffectTargeting.ALL:
                 targets = this.activePokemons();
         }
 
         // if target is self, doesn't matter if it's dead
-        return targeting === Targeting.SELF ? targets : targets.filter(pkmn => pkmn.health > 0);
+        return targeting === EffectTargeting.SELF ? targets : targets.filter(pkmn => pkmn.health > 0);
     }
 
     // it's ok to run all effects without checking outcome.

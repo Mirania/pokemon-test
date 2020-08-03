@@ -8,7 +8,7 @@ interface EffectData {
     name: string,
     duration: number,
     trigger: Trigger,
-    targeting: Targeting,
+    targeting: EffectTargeting,
     /** Whether effect should disappear if target is switched out. */
     endOnSwitch: boolean,
     turn?: number,
@@ -46,7 +46,7 @@ export function getEffect(name: string): Effect {
  * 
  * All - targets all actives. "target" is an active entity.
  */
-export enum Targeting {
+export enum EffectTargeting {
     SINGLE, SELF, ALLIES, FOES, ALL
 }
 
@@ -59,7 +59,7 @@ export const effects: Effect[] = [
         name: "Freeze",
         duration: undefined, // needs to be dynamically computed
         trigger: Trigger.START_OF_TURN,
-        targeting: Targeting.SINGLE,
+        targeting: EffectTargeting.SINGLE,
         endOnSwitch: false,
         onCreation(effect, user, target, battle) {
             effect.duration = randomInt(1, 4);
@@ -80,7 +80,7 @@ export const effects: Effect[] = [
         name: "Burn",
         duration: Infinity,
         trigger: Trigger.END_OF_TURN,
-        targeting: Targeting.SINGLE,
+        targeting: EffectTargeting.SINGLE,
         endOnSwitch: false,
         onCreation(effect, user, target, battle) {
             console.log(`${target.name} is now burning!`);
@@ -96,7 +96,7 @@ export const effects: Effect[] = [
         turn: 1,
         duration: Infinity,
         trigger: Trigger.END_OF_TURN,
-        targeting: Targeting.SINGLE,
+        targeting: EffectTargeting.SINGLE,
         endOnSwitch: false,
         onCreation(effect, user, target, battle) {
             console.log(`${target.name} became poisoned!`);
@@ -111,7 +111,7 @@ export const effects: Effect[] = [
         name: "Confusion",
         duration: undefined,
         trigger: Trigger.START_OF_TURN,
-        targeting: Targeting.SINGLE,
+        targeting: EffectTargeting.SINGLE,
         endOnSwitch: true,
         selfHit: undefined,
         onCreation(effect, user, target, battle) {
@@ -138,7 +138,7 @@ export const effects: Effect[] = [
         name: "Destiny Bond",
         duration: 1,
         trigger: Trigger.ON_DEATH,
-        targeting: Targeting.SELF,
+        targeting: EffectTargeting.SELF,
         endOnSwitch: true,
         onCreation(effect, user, target, battle) {
             console.log(`${target.name} wants to take its foe down with it!`);
@@ -155,7 +155,7 @@ export const effects: Effect[] = [
         name: "Stealth Rock",
         duration: Infinity,
         trigger: Trigger.ON_SWITCH_IN,
-        targeting: Targeting.FOES,
+        targeting: EffectTargeting.FOES,
         endOnSwitch: false,
         onCreation(effect, user, target, battle) {
             console.log(`Sharp rocks levitate around ${user.name}'s foes!`);

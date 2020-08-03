@@ -2,12 +2,13 @@ import { Pokemon, Status, effective, effectiveAccuracy } from "./pokemon";
 import { Battle, Weather } from "./battle";
 import { random, limit } from "./utils";
 import { Type, Category, affinity } from "./types";
-import { effects, getEffect, createEffect } from "./effects";
+import { effects, getEffect } from "./effects";
 
 interface MoveData {
     name: string,
     type: Type,
     category: Category,
+    targeting: MoveTargeting,
     power: number,
     accuracy: number,
     points: number,
@@ -84,11 +85,31 @@ function isCrit(stage: number): boolean {
     return crit;
 }
 
+/**
+ * Single - targets someone. "target" should be determined on effect creation.
+ * Requires **user** and **target**.
+ * 
+ * Self - targets self. "target" is equal to "user". Requires **user**.
+ * 
+ * Adjacent - targets all enemies or allies around the primary "target",
+ * excluding self ("user"). Requires **user** and **target**.
+ * 
+ * Allies - targets active allies. "target" is an active ally. Requires **user**.
+ * 
+ * Foes - targets active foes. "target" is an active foe. Requires **user**.
+ * 
+ * All - targets all actives. "target" is an active entity.
+ */
+export enum MoveTargeting {
+    SINGLE, SELF, ADJACENT, ALLIES, FOES, ALL
+}
+
 export const moves: Move[] = [
     {
         name: "Struggle",
         type: Type.NORMAL,
         category: Category.PHYSICAL,
+        targeting: MoveTargeting.SINGLE,
         power: 50,
         accuracy: 100,
         points: Infinity,
@@ -104,6 +125,7 @@ export const moves: Move[] = [
         name: "Scratch",
         type: Type.NORMAL,
         category: Category.PHYSICAL,
+        targeting: MoveTargeting.SINGLE,
         power: 40,
         accuracy: 100,
         points: 35,
@@ -115,6 +137,7 @@ export const moves: Move[] = [
         name: "Ember",
         type: Type.FIRE,
         category: Category.SPECIAL,
+        targeting: MoveTargeting.SINGLE,
         power: 40,
         accuracy: 100,
         points: 35,
@@ -126,6 +149,7 @@ export const moves: Move[] = [
         name: "Blaze Kick",
         type: Type.FIRE,
         category: Category.PHYSICAL,
+        targeting: MoveTargeting.SINGLE,
         power: 85,
         accuracy: 90,
         points: 10,
@@ -142,6 +166,7 @@ export const moves: Move[] = [
         name: "Will-o-Wisp",
         type: Type.FIRE,
         category: Category.STATUS,
+        targeting: MoveTargeting.SINGLE,
         power: 0,
         accuracy: 85,
         points: 15,
@@ -155,6 +180,7 @@ export const moves: Move[] = [
         name: "Blizzard",
         type: Type.ICE,
         category: Category.SPECIAL,
+        targeting: MoveTargeting.ADJACENT,
         power: 110,
         accuracy: 70,
         points: 5,
@@ -168,6 +194,7 @@ export const moves: Move[] = [
         name: "Dizzy Punch",
         type: Type.NORMAL,
         category: Category.PHYSICAL,
+        targeting: MoveTargeting.SINGLE,
         power: 70,
         accuracy: 100,
         points: 20,
@@ -180,6 +207,7 @@ export const moves: Move[] = [
         name: "Confusion Hit",
         type: undefined,
         category: Category.PHYSICAL,
+        targeting: MoveTargeting.SELF,
         power: 40,
         accuracy: Infinity,
         points: Infinity,
@@ -191,6 +219,7 @@ export const moves: Move[] = [
         name: "Destiny Bond",
         type: undefined,
         category: Category.STATUS,
+        targeting: MoveTargeting.SELF,
         power: 0,
         accuracy: Infinity,
         points: 5,
@@ -202,6 +231,7 @@ export const moves: Move[] = [
         name: "Stealth Rock",
         type: Type.ROCK,
         category: Category.STATUS,
+        targeting: MoveTargeting.FOES,
         power: 0,
         accuracy: Infinity,
         points: 20,
