@@ -125,7 +125,7 @@ export const effects: Effect[] = [
 
             if (random() < 1/3) {
                 console.log(`${target.name} hurt itself in its confusion!`);
-                (effect.selfHit as Move).execute(effect.selfHit, target, target, battle);
+                (effect.selfHit as Move).execute(effect.selfHit, target, target, battle, 1);
                 target.canAttack = false;
             }
         },
@@ -157,9 +157,6 @@ export const effects: Effect[] = [
         trigger: Trigger.ON_SWITCH_IN,
         targeting: EffectTargeting.FOES,
         endOnSwitch: false,
-        onCreation(effect, user, target, battle) {
-            console.log(`Sharp rocks levitate around ${user.name}'s foes!`);
-        },
         execute(effect, user, target, battle) {
             console.log(`Sharp rocks dig into ${target.name}!`);
 

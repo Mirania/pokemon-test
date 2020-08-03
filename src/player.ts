@@ -93,7 +93,8 @@ export function switchPicker(switchedOut: Pokemon, battle: Battle): SwitchComman
     let switchedIn: Pokemon;
 
     const partyList = switchedOut.team === Team.ALLY ? battle.partyAllies : battle.partyEnemies;
-    const availableList = partyList.filter(pkmn => pkmn.health > 0);
+    const queuedSwitches = battle.switchQueue.map(cmd => cmd?.switchedIn) ?? [];
+    const availableList = partyList.filter(pkmn => pkmn.health > 0 && !queuedSwitches.includes(pkmn));
 
     if (switchedOut.team === Team.ALLY) {
         console.log(`Select your Pokemon (indexes 0-${availableList.length - 1}):`);

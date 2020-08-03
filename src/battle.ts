@@ -59,7 +59,11 @@ export class Battle {
                 targets = this.isActive(moveCommand.target) ? [moveCommand.target] : [];
                 break;
             case MoveTargeting.ADJACENT:
-                //todo - make sure it doesn't include self
+                const primaryTarget = moveCommand.target;
+                const targetList = primaryTarget.team === Team.ALLY ? this.activeAllies : this.activeEnemies;
+                const index = targetList.findIndex(pkmn => pkmn === primaryTarget);
+                targets = [targetList[index-1], targetList[index], targetList[index+1]]
+                    .filter(target => target && target !== moveCommand.user);
                 break;
             case MoveTargeting.ALLIES:
                 targets = moveCommand.user.team === Team.ALLY ? this.activeAllies : this.activeEnemies;
@@ -125,11 +129,13 @@ export class Battle {
 
     // it's ok to run all effects without checking outcome.
     // they are only applied under valid circumstances.
-    applyEffect(effectCommand: EffectCommand, index: number, order: Pokemon[]): void {
+    /** "Specific target" means no target resolving needs to happen. That target will be the only one. */
+    applyEffect(effectCommand: EffectCommand, index: number, order: Pokemon[], specificTarget?: Pokemon): void {
         if (!effectCommand) return;
         const {effect, user} = effectCommand;
+        const targetList = specificTarget ? [specificTarget] : this.getEffectTargets(effectCommand);
 
-        for (const target of this.getEffectTargets(effectCommand)) {
+        for (const target of targetList) {
             if (effect.duration <= 0) effect.onDeletion?.(effect, user, target, this);
             else effect.execute?.(effect, user, target, this);
 
@@ -155,7 +161,7 @@ export class Battle {
         for (let i = 0; i < this.effectQueue.length; i++) {
             const effectCommand = this.effectQueue[i];
             if (effectCommand?.effect.trigger === Trigger.ON_SWITCH_OUT)
-                this.applyEffect(effectCommand, i, order);
+                this.applyEffect(effectCommand, i, order, switchedOut);
         }
 
         this.checkDeath(order);
@@ -189,7 +195,7 @@ export class Battle {
         for (let i = 0; i < this.effectQueue.length; i++) {
             const effectCommand = this.effectQueue[i];
             if (effectCommand?.effect.trigger === Trigger.ON_SWITCH_IN)
-                this.applyEffect(effectCommand, i, order);
+                this.applyEffect(effectCommand, i, order, switchedIn);
         }
 
         this.checkDeath(order);
@@ -265,24 +271,30 @@ export class Battle {
             }
         }
 
-        // begin turn
+        // pre-turn preparations
         for (let i=0; i<order.length; i++) {
-            // if there's a switch pending, do it, otherwise proceed as normal
-            const user = this.switchQueue[i] 
-                ? this.switchPokemon(this.switchQueue[i].switchedOut, this.switchQueue[i].switchedIn, order) 
-                : order[i];
-            if (user.health <= 0) continue;
+            const user = order[i];
 
+            if (this.switchQueue[i])
+                this.switchPokemon(this.switchQueue[i].switchedOut, this.switchQueue[i].switchedIn, order);
+            
             // apply abilities (start of turn)
             // no checkDeath here. abilities are not expected to KO someone. this can change later
             user.ability.onTurnBeginning?.(user.ability, user, this);
+        }
 
-            // apply effects (start of turn)
-            for (let i = 0; i < this.effectQueue.length; i++) {
-                const effectCommand = this.effectQueue[i];
-                if (effectCommand?.target === user && effectCommand?.effect.trigger === Trigger.START_OF_TURN)
-                    this.applyEffect(effectCommand, i, order);
-            }
+        // apply effects (start of turn)
+        for (let i = 0; i < this.effectQueue.length; i++) {
+            const effectCommand = this.effectQueue[i];
+            if (effectCommand?.effect.trigger === Trigger.START_OF_TURN)
+                this.applyEffect(effectCommand, i, order);
+        }
+
+        // begin turn
+        for (let i=0; i<order.length; i++) {
+            // if there's a switch pending, do it, otherwise proceed as normal
+            const user = order[i];
+            if (user.health <= 0) continue;
 
             // possible early exit (already won/lost)
             const outcome = this.checkVictory();
@@ -297,17 +309,18 @@ export class Battle {
                 move.points = Math.floor(limit(0, move.points, move.maxPoints ?? move.points));
 
                 // based on move targeting, apply move to all targets
-                for (const target of this.getMoveTargets(this.moveQueue[i])) {
-                    move.onUse?.(move, user, target, this);
+                const targetList = this.getMoveTargets(this.moveQueue[i]);
+                for (const target of targetList) {
+                    move.onUse?.(move, user, target, this, targetList.length);
                     if (isHit(move, user, target)) {               
                         if (target && target.health > 0) {
-                            move.execute(move, user, target, this);
+                            move.execute(move, user, target, this, targetList.length);
                             target.lastHitBy = {move, attacker: user};
                             this.printEffectiveness(move, target);
                         }
                         else console.log("But it failed!");
                     } else {
-                        move.onMiss?.(move, user, target, this);
+                        move.onMiss?.(move, user, target, this, targetList.length);
                         console.log("But it missed!");
                     }
 

@@ -14,11 +14,11 @@ interface MoveData {
     points: number,
     maxPoints?: number,
     /** Use a move. */
-    execute: (move: Move, user: Pokemon, target: Pokemon, battle: Battle) => void,
+    execute: (move: Move, user: Pokemon, target: Pokemon, battle: Battle, targetCount: number) => void,
     /* On move being used. */
-    onUse?: (move: Move, user: Pokemon, target: Pokemon, battle: Battle) => void,
+    onUse?: (move: Move, user: Pokemon, target: Pokemon, battle: Battle, targetCount: number) => void,
     /** On move missing. */
-    onMiss?: (move: Move, user: Pokemon, target: Pokemon, battle: Battle) => void
+    onMiss?: (move: Move, user: Pokemon, target: Pokemon, battle: Battle, targetCount: number) => void
 }
 
 /** Any additional information a move may want to store. */
@@ -40,7 +40,7 @@ export function isHit(move: Move, user: Pokemon, target: Pokemon): boolean {
     return move.accuracy/100 * effectiveAccuracy(stage) >= random();
 }
 
-export function calcDamage(move: Move, user: Pokemon, target: Pokemon, battle: Battle): number {
+export function calcDamage(move: Move, user: Pokemon, target: Pokemon, battle: Battle, targets: number): number {
     const crit = isCrit(user.critStage);
     const attack = move.category === Category.PHYSICAL
         ? effective(user.attack, crit ? Math.max(0, user.attackStage) : user.attackStage)
@@ -48,15 +48,16 @@ export function calcDamage(move: Move, user: Pokemon, target: Pokemon, battle: B
     const defense = move.category === Category.PHYSICAL
         ? effective(target.defense, crit ? Math.min(0, target.defenseStage) : target.defenseStage)
         : effective(target.spDefense, crit ? Math.min(0, target.spDefenseStage) : target.spDefenseStage);
+    const multTarget = (move.targeting === MoveTargeting.ADJACENT && targets > 1) ? 0.75 : 1;
     const weather = weatherAffinity(move, battle);
     const rng = random(0.85, 1);
     const stab = (move.type === user.primaryType || move.type === user.secondaryType) ? 1.5 : 1;
     const multPrimary = affinity(move.type, target.primaryType);
     const multSecondary = affinity(move.type, target.secondaryType);
-    const burn = move.category === Category.PHYSICAL && user.status === Status.BURNED ? 0.5 : 1;
+    const burn = move.category === (Category.PHYSICAL && user.status === Status.BURNED) ? 0.5 : 1;
 
     const total = (((((2 * user.level / 5) + 2) * move.power * attack / defense) / 50) + 2) * 
-        weather * (crit ? 1.5 : 1) * rng * stab * multPrimary * multSecondary * burn;
+        multTarget * weather * (crit ? 1.5 : 1) * rng * stab * multPrimary * multSecondary * burn;
 
     // don't overkill
     return Math.min(total, target.health);
@@ -113,8 +114,8 @@ export const moves: Move[] = [
         power: 50,
         accuracy: 100,
         points: Infinity,
-        execute(move, user, target, battle) {
-            const damage = calcDamage(move, user, target, battle);
+        execute(move, user, target, battle, targetCount) {
+            const damage = calcDamage(move, user, target, battle, targetCount);
             target.health -= damage;
             
             console.log(`${user.name} received some recoil damage.`);
@@ -129,8 +130,8 @@ export const moves: Move[] = [
         power: 40,
         accuracy: 100,
         points: 35,
-        execute(move, user, target, battle) {
-            target.health -= calcDamage(move, user, target, battle);
+        execute(move, user, target, battle, targetCount) {
+            target.health -= calcDamage(move, user, target, battle, targetCount);
         }
     },
     {
@@ -141,8 +142,8 @@ export const moves: Move[] = [
         power: 40,
         accuracy: 100,
         points: 35,
-        execute(move, user, target, battle) {
-            target.health -= calcDamage(move, user, target, battle);
+        execute(move, user, target, battle, targetCount) {
+            target.health -= calcDamage(move, user, target, battle, targetCount);
         }
     },
     {
@@ -153,9 +154,9 @@ export const moves: Move[] = [
         power: 85,
         accuracy: 90,
         points: 10,
-        execute(move, user, target, battle) {
+        execute(move, user, target, battle, targetCount) {
             user.critStage += 2;
-            target.health -= calcDamage(move, user, target, battle);
+            target.health -= calcDamage(move, user, target, battle, targetCount);
             user.critStage -= 2;
 
             if (target.status === Status.NONE && random() <= 0.1)
@@ -170,7 +171,7 @@ export const moves: Move[] = [
         power: 0,
         accuracy: 85,
         points: 15,
-        execute(move, user, target, battle) {
+        execute(move, user, target, battle, targetCount) {
             if (target.status === Status.NONE)
                 battle.addEffect(getEffect("Burn"), user, target);
             else console.log("But it failed!");
@@ -184,8 +185,8 @@ export const moves: Move[] = [
         power: 110,
         accuracy: 70,
         points: 5,
-        execute(move, user, target, battle) {
-            target.health -= calcDamage(move, user, target, battle);
+        execute(move, user, target, battle, targetCount) {
+            target.health -= calcDamage(move, user, target, battle, targetCount);
             if (target.status === Status.NONE && random() <= 0.1)
                 battle.addEffect(getEffect("Freeze"), user, target);
         }
@@ -198,8 +199,8 @@ export const moves: Move[] = [
         power: 70,
         accuracy: 100,
         points: 20,
-        execute(move, user, target, battle) {
-            target.health -= calcDamage(move, user, target, battle);
+        execute(move, user, target, battle, targetCount) {
+            target.health -= calcDamage(move, user, target, battle, targetCount);
             if (random() <= 1) battle.addEffect(getEffect("Confusion"), user, target);
         }
     },
@@ -211,8 +212,8 @@ export const moves: Move[] = [
         power: 40,
         accuracy: Infinity,
         points: Infinity,
-        execute(move, user, target, battle) {
-            target.health -= calcDamage(move, user, target, battle);
+        execute(move, user, target, battle, targetCount) {
+            target.health -= calcDamage(move, user, target, battle, targetCount);
         }
     },
     {
@@ -223,7 +224,7 @@ export const moves: Move[] = [
         power: 0,
         accuracy: Infinity,
         points: 5,
-        execute(move, user, target, battle) {
+        execute(move, user, target, battle, targetCount) {
             battle.addEffect(getEffect("Destiny Bond"), user, target);
         }
     },
@@ -231,17 +232,30 @@ export const moves: Move[] = [
         name: "Stealth Rock",
         type: Type.ROCK,
         category: Category.STATUS,
-        targeting: MoveTargeting.FOES,
+        targeting: MoveTargeting.SELF,
         power: 0,
         accuracy: Infinity,
         points: 20,
-        execute(move, user, target, battle) {
+        execute(move, user, target, battle, targetCount) {
             if (battle.effectExists(getEffect("Stealth Rock"), user)) {
                 console.log("But it failed!");
                 return;
             }
 
+            console.log(`Sharp rocks levitate around ${user.name}'s foes!`);
             battle.addEffect(getEffect("Stealth Rock"), user);
+        }
+    },
+    {
+        name: "Surf",
+        type: Type.WATER,
+        category: Category.SPECIAL,
+        targeting: MoveTargeting.ADJACENT,
+        power: 95,
+        accuracy: 100,
+        points: 15,
+        execute(move, user, target, battle, targetCount) {
+            target.health -= calcDamage(move, user, target, battle, targetCount);
         }
     }
 ];
