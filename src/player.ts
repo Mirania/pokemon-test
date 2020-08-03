@@ -1,5 +1,5 @@
 import { Pokemon, Team, noMoves } from "./pokemon";
-import { Move, createMove, moves } from "./moves";
+import { Move, createMove, moves, MoveTargeting } from "./moves";
 import { Battle, MoveCommand, SwitchCommand } from "./battle";
 import { randomElement } from "./utils";
 const prompt = require('prompt-sync')({sigint: true}) as (question: string) => string;
@@ -54,31 +54,34 @@ export function movePicker(user: Pokemon, battle: Battle): MoveCommand {
         move = randomElement(user.moves.filter(move => move.points > 0));
     }
 
-    // target selection - later based on move targeting behaviour
-    if (battle.battleSize <= 1) {
-        // immediate selection, no choices to be made
-        const optionList = user.team === Team.ALLY ? battle.activeEnemies : battle.activeAllies;
-        target = optionList[0];
-    } else if (user.team === Team.ALLY) {
-        // player's selection
-        const optionList = battle.activePokemons().filter(pkmn => pkmn.health >= 0);
-        console.log(`Select your target (indexes 0-${optionList.length - 1}):`);
+    // target selection - may end up undefined
+    // only single and adjacent require an explicit target
+    if (move.targeting === MoveTargeting.SINGLE || move.targeting === MoveTargeting.ADJACENT) {
+        if (battle.battleSize <= 0) {
+            // immediate selection, no choices to be made
+            const optionList = user.team === Team.ALLY ? battle.activeEnemies : battle.activeAllies;
+            target = optionList[0];
+        } else if (user.team === Team.ALLY) {
+            // player's selection
+            const optionList = battle.activePokemons().filter(pkmn => pkmn !== user && pkmn.health >= 0);
+            console.log(`Select your target (indexes 0-${optionList.length - 1}):`);
 
-        for (let i=0; i<optionList.length; i++) {
-            const option = optionList[i];
-            const id = `${option.name}${option.gender}`;
-            const hp = `${option.health}/${option.maxHealth}`;
-            console.log(`${i} - ${id} [${hp}] ${option.status}`);
+            for (let i=0; i<optionList.length; i++) {
+                const option = optionList[i];
+                const id = `${option.name}${option.gender}`;
+                const hp = `${option.health}/${option.maxHealth}`;
+                console.log(`${i} - ${id} [${hp}] ${option.status}`);
+            }
+            do {
+                target = optionList[prompt("> ")];
+            } while (!target);
+        } else {
+            // AI's selection
+            target = randomElement(battle.activeAllies);
         }
-        do {
-            target = optionList[prompt("> ")];
-        } while (!target);
-    } else {
-        // AI's selection
-        target = randomElement(battle.activeAllies);
     }
 
-    return { move, target };
+    return { move, user, target };
 }
 
 export function canSwitch(switchedOut: Pokemon, battle: Battle): boolean {

@@ -1,12 +1,12 @@
 import { Pokemon, effective, Status, Team } from "./pokemon";
 import { random, limit } from "./utils";
-import { isHit, Move } from "./moves";
+import { isHit, Move, MoveTargeting } from "./moves";
 import { affinity, Category } from "./types";
 import { Effect, createEffect, Trigger, EffectTargeting } from "./effects";
 import { movePicker, actionPicker, Action, switchPicker, canSwitch } from "./player";
 
 export type EffectCommand = { effect: Effect, user?: Pokemon, target?: Pokemon };
-export type MoveCommand = { move: Move, target: Pokemon };
+export type MoveCommand = { move: Move, user: Pokemon, target?: Pokemon };
 export type SwitchCommand = { switchedOut: Pokemon, switchedIn: Pokemon };
 
 export class Battle {
@@ -44,6 +44,36 @@ export class Battle {
             if (aSpeed === bSpeed) return random() >= 0.5 ? -1 : 1; // tie
             return bSpeed - aSpeed;
         });
+    }
+
+    getMoveTargets(moveCommand: MoveCommand): Pokemon[] {
+        if (!moveCommand) return [];
+        let targets: Pokemon[];
+        const targeting = moveCommand.move.targeting;
+
+        switch (targeting) {
+            case MoveTargeting.SELF:
+                targets = [moveCommand.user];
+                break;
+            case MoveTargeting.SINGLE:
+                targets = this.isActive(moveCommand.target) ? [moveCommand.target] : [];
+                break;
+            case MoveTargeting.ADJACENT:
+                //todo - make sure it doesn't include self
+                break;
+            case MoveTargeting.ALLIES:
+                targets = moveCommand.user.team === Team.ALLY ? this.activeAllies : this.activeEnemies;
+                break;
+            case MoveTargeting.FOES:
+                targets = moveCommand.user.team === Team.ALLY ? this.activeEnemies : this.activeAllies;
+                break;
+            case MoveTargeting.ALL:
+                targets = this.activePokemons();
+                break;
+        }
+
+        // if target is self, doesn't matter if it's dead
+        return targeting === MoveTargeting.SELF ? targets : targets.filter(pkmn => pkmn.health > 0);
     }
 
     addEffect(effect: Effect, user?: Pokemon, target?: Pokemon): void {
@@ -86,6 +116,7 @@ export class Battle {
                 break;
             case EffectTargeting.ALL:
                 targets = this.activePokemons();
+                break;
         }
 
         // if target is self, doesn't matter if it's dead
@@ -259,28 +290,31 @@ export class Battle {
 
             // attempt to perform a move
             if (user.canAttack && this.moveQueue[i]) {
-                const {move, target} = this.moveQueue[i];
+                const {move} = this.moveQueue[i];
                 
-                console.log(`${user.name} used ${move.name}!`);
                 move.points--;
-
-                move.onUse?.(move, user, target, this);
-                if (isHit(move, user, target)) {
-                    this.printEffectiveness(move, target);
-                    if (target && target.health > 0) {
-                        move.execute(move, user, target, this);
-                        target.lastHitBy = {move, attacker: user};
-                    }
-                    else console.log("But it failed!");
-                } else {
-                    move.onMiss?.(move, user, target, this);
-                    console.log("But it missed!");
-                }
-
-                // enforce hp/move limits
+                console.log(`${user.name} used ${move.name}!`); 
                 move.points = Math.floor(limit(0, move.points, move.maxPoints ?? move.points));
-                user.health = Math.floor(limit(0, user.health, user.maxHealth));
-                target.health = Math.floor(limit(0, target.health, target.maxHealth));
+
+                // based on move targeting, apply move to all targets
+                for (const target of this.getMoveTargets(this.moveQueue[i])) {
+                    move.onUse?.(move, user, target, this);
+                    if (isHit(move, user, target)) {               
+                        if (target && target.health > 0) {
+                            move.execute(move, user, target, this);
+                            target.lastHitBy = {move, attacker: user};
+                            this.printEffectiveness(move, target);
+                        }
+                        else console.log("But it failed!");
+                    } else {
+                        move.onMiss?.(move, user, target, this);
+                        console.log("But it missed!");
+                    }
+
+                    // enforce hp limits  
+                    user.health = Math.floor(limit(0, user.health, user.maxHealth));
+                    target.health = Math.floor(limit(0, target.health, target.maxHealth));
+                }
 
                 this.checkDeath(order);
                 this.printState();
