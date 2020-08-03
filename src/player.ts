@@ -1,6 +1,6 @@
 import { Pokemon, Team, noMoves } from "./pokemon";
 import { Move, createMove, moves } from "./moves";
-import { Battle } from "./battle";
+import { Battle, MoveCommand, SwitchCommand } from "./battle";
 import { randomElement } from "./utils";
 const prompt = require('prompt-sync')({sigint: true}) as (question: string) => string;
 
@@ -28,7 +28,7 @@ export function actionPicker(user: Pokemon): Action {
     return choice;
 }
 
-export function movePicker(user: Pokemon, battle: Battle): {move: Move, target: Pokemon} {
+export function movePicker(user: Pokemon, battle: Battle): MoveCommand {
     let move: Move, target: Pokemon;
 
     // move selection
@@ -51,7 +51,7 @@ export function movePicker(user: Pokemon, battle: Battle): {move: Move, target: 
         } while (!move || move.points <= 0);
     } else {
         // AI's selection
-        move = randomElement(user.moves);
+        move = randomElement(user.moves.filter(move => move.points > 0));
     }
 
     // target selection - later based on move targeting behaviour
@@ -86,8 +86,8 @@ export function canSwitch(switchedOut: Pokemon, battle: Battle): boolean {
     return partyList.filter(pkmn => pkmn.health > 0).length > 0;
 }
 
-export function switchPicker(switchedOut: Pokemon, battle: Battle): Pokemon {
-    let choice: Pokemon;
+export function switchPicker(switchedOut: Pokemon, battle: Battle): SwitchCommand {
+    let switchedIn: Pokemon;
 
     const partyList = switchedOut.team === Team.ALLY ? battle.partyAllies : battle.partyEnemies;
     const availableList = partyList.filter(pkmn => pkmn.health > 0);
@@ -102,12 +102,12 @@ export function switchPicker(switchedOut: Pokemon, battle: Battle): Pokemon {
             console.log(`${i} - ${id} [${hp}] ${option.status}`);
         }
         do {
-            choice = availableList[prompt("> ")];
-        } while (!choice);
+            switchedIn = availableList[prompt("> ")];
+        } while (!switchedIn);
     } else {
         // AI's selection
-        choice = randomElement(availableList);
+        switchedIn = randomElement(availableList);
     }
 
-    return choice;
+    return { switchedOut, switchedIn };
 }

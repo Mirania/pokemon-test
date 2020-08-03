@@ -47,7 +47,7 @@ export type Pokemon = PokemonData & {
     critStage: number,
     status: Status,
     canAttack: boolean,
-    lastHitBy: {move: Move, user: Pokemon}
+    lastHitBy: {move: Move, attacker: Pokemon}
 }
 
 export function createPokemon(data: PokemonData): Pokemon {

@@ -1,21 +1,25 @@
-import { Pokemon, noMoves, effective, Status, Team } from "./pokemon";
-import { random, randomElement, limit } from "./utils";
-import { isHit, Move, moves, createMove } from "./moves";
+import { Pokemon, effective, Status, Team } from "./pokemon";
+import { random, limit } from "./utils";
+import { isHit, Move } from "./moves";
 import { affinity, Category } from "./types";
-import { Effect, createEffect, Behaviour } from "./effects";
+import { Effect, createEffect, Trigger, Targeting } from "./effects";
 import { movePicker, actionPicker, Action, switchPicker, canSwitch } from "./player";
+
+export type EffectCommand = { effect: Effect, user?: Pokemon, target?: Pokemon };
+export type MoveCommand = { move: Move, target: Pokemon };
+export type SwitchCommand = { switchedOut: Pokemon, switchedIn: Pokemon };
 
 export class Battle {
     battleSize: number;
     turnNumber: number;
     weather: Weather;
-    effects: Effect[];
     partyAllies: Pokemon[]; // in party, not in battle
     activeAllies: Pokemon[]; // in battle
     partyEnemies: Pokemon[]; // in party, not in battle
     activeEnemies: Pokemon[]; // in battle
-    moveQueue: { move: Move, target: Pokemon }[];
-    switchQueue: { switchedOut: Pokemon, switchedIn: Pokemon }[];
+    effectQueue: EffectCommand[]; // may have undefined positions!
+    moveQueue: MoveCommand[]; // may have undefined positions!
+    switchQueue: SwitchCommand[]; // may have undefined positions!
 
     /** Battle size: 1 = 1v1, 2 = 2v2, etc. */
     constructor(allies: Pokemon[], enemies: Pokemon[], battleSize: number) {
@@ -24,9 +28,9 @@ export class Battle {
         this.partyEnemies = enemies.slice(battleSize, enemies.length);
         this.activeEnemies = enemies.slice(0, battleSize);
         this.weather = Weather.NONE;
-        this.effects = [];
         this.battleSize = battleSize;
         this.turnNumber = 1;
+        this.effectQueue = [];
         this.moveQueue = [];
         this.switchQueue = [];
     }
@@ -43,28 +47,60 @@ export class Battle {
     }
 
     addEffect(effect: Effect, user?: Pokemon, target?: Pokemon): void {
-        const addedEffect = createEffect(effect, user, target);
-        if (this.effectExists(addedEffect)) return;
+        const addedEffect = createEffect(effect);
+        const effectCommand = {effect: addedEffect, user, target};
+        if (this.effectExists(addedEffect, user, target)) return;
 
-        addedEffect.onCreation?.(addedEffect, this);
-        this.effects.push(addedEffect);
+        for (const target of this.getEffectTargets(effectCommand)) 
+            addedEffect.onCreation?.(addedEffect, user, target, this);
+        this.effectQueue.push(effectCommand);
     }
 
-    effectExists(effect: Effect): boolean {
-        return this.effects.some(e => e.name === effect.name && e.target === effect.target);
+    effectExists(effect: Effect, user?: Pokemon, target?: Pokemon): boolean {
+        // note: this works for effects without targets/users too
+        // e.target === target ---> undefined === undefined ---> true
+        return this.effectQueue.some(cmd => 
+            cmd && cmd.effect.name === effect.name && cmd.user === user && cmd.target === target
+        );
+    }
+
+    // effects can have 1 or many targets.
+    // if no target is defined, effect is assumed to target everyone in the field.
+    getEffectTargets(effectCommand: EffectCommand): Pokemon[] {
+        if (!effectCommand) return [];
+        let targets: Pokemon[];
+        const targeting = effectCommand.effect.targeting;
+
+        switch (targeting) {
+            case Targeting.SELF:
+                targets = [effectCommand.user];
+                break;
+            case Targeting.SINGLE:
+                targets = this.isActive(effectCommand.target) ? [effectCommand.target] : [];
+                break;
+            case Targeting.ALLIES:
+                targets = effectCommand.user.team === Team.ALLY ? this.activeAllies : this.activeEnemies;
+                break;
+            case Targeting.FOES:
+                targets = effectCommand.user.team === Team.ALLY ? this.activeEnemies : this.activeAllies;
+                break;
+            case Targeting.ALL:
+                targets = this.activePokemons();
+        }
+
+        // if target is self, doesn't matter if it's dead
+        return targeting === Targeting.SELF ? targets : targets.filter(pkmn => pkmn.health > 0);
     }
 
     // it's ok to run all effects without checking outcome.
     // they are only applied under valid circumstances.
-    applyEffect(effect: Effect, index: number, order: Pokemon[]): void {
-        // effects can have 1 or many targets.
-        // if no target is defined, effect is assumed to target everyone in the field.
-        if (!effect.target || (this.isActive(effect.target) && 
-            effect.target.health > 0 || effect.behaviour === Behaviour.ON_DEATH)) {
-            if (effect.duration === 0) {
-                effect.onDeletion?.(effect, this);
-                this.effects.splice(index, 1);
-            } else effect.execute?.(effect, this);
+    applyEffect(effectCommand: EffectCommand, index: number, order: Pokemon[]): void {
+        if (!effectCommand) return;
+        const {effect, user} = effectCommand;
+
+        for (const target of this.getEffectTargets(effectCommand)) {
+            if (effect.duration <= 0) effect.onDeletion?.(effect, user, target, this);
+            else effect.execute?.(effect, user, target, this);
 
             // enforce hp limits
             for (const user of this.activePokemons())
@@ -72,9 +108,12 @@ export class Battle {
 
             this.checkDeath(order);
 
-            console.log(`${effect.name} effect:`);
+            console.log(`${effect.name} effect on ${target.name}:`);
             this.printState();
         }
+
+        // remove from effects list by emptying the position
+        if (effect.duration <= 0) this.effectQueue[index] = undefined;
     }
 
     switchPokemon(switchedOut: Pokemon, switchedIn: Pokemon, order: Pokemon[]): Pokemon {
@@ -82,13 +121,20 @@ export class Battle {
         switchedOut.ability.onSwitchOut?.(switchedOut.ability, switchedOut, this);
 
         // apply effects (on switch out)
-        for (let i = 0; i < this.effects.length; i++) {
-            const effect = this.effects[i];
-            if (effect.behaviour === Behaviour.ON_SWITCH_OUT)
-                this.applyEffect(effect, i, order);
+        for (let i = 0; i < this.effectQueue.length; i++) {
+            const effectCommand = this.effectQueue[i];
+            if (effectCommand?.effect.trigger === Trigger.ON_SWITCH_OUT)
+                this.applyEffect(effectCommand, i, order);
         }
 
         this.checkDeath(order);
+        
+        // clear effects that should be cleared on switching out
+        for (let i=0; i<this.effectQueue.length; i++) {
+            const effectCommand = this.effectQueue[i];
+            if (effectCommand?.effect.endOnSwitch && effectCommand?.target === switchedOut)
+                this.effectQueue[i] = undefined;
+        }
 
         if (switchedOut.team === Team.ALLY) {
             console.log(`You withdrew ${switchedOut.name}!`);
@@ -109,10 +155,10 @@ export class Battle {
         switchedIn.ability.onSwitchIn?.(switchedIn.ability, switchedIn, this);
 
         // apply effects (on switch in)
-        for (let i = 0; i < this.effects.length; i++) {
-            const effect = this.effects[i];
-            if (effect.behaviour === Behaviour.ON_SWITCH_IN)
-                this.applyEffect(effect, i, order);
+        for (let i = 0; i < this.effectQueue.length; i++) {
+            const effectCommand = this.effectQueue[i];
+            if (effectCommand?.effect.trigger === Trigger.ON_SWITCH_IN)
+                this.applyEffect(effectCommand, i, order);
         }
 
         this.checkDeath(order);
@@ -147,6 +193,10 @@ export class Battle {
     turn(): Outcome {
         if (this.weather !== Weather.NONE) console.log(`It's ${this.weather}.`);
 
+        // possible early exit (already won/lost)
+        const outcome = this.checkVictory();
+        if (outcome !== Outcome.UNDECIDED) return outcome;
+
         const order = this.sortBySpeed();
 
         // option selection - fight, run, etc.
@@ -155,9 +205,9 @@ export class Battle {
         for (const user of order) {
             // user is forced to switch
             if (user.health <= 0) {
-                const switchedIn = switchPicker(user, this);
-                this.switchQueue.push({switchedOut: user, switchedIn});
-                this.moveQueue.push(movePicker(switchedIn, this));
+                const switchCommand = switchPicker(user, this);
+                this.switchQueue.push(switchCommand);
+                this.moveQueue.push(movePicker(switchCommand.switchedIn, this));
                 continue;
             }
 
@@ -176,7 +226,7 @@ export class Battle {
                     break;
                 case Action.SWITCH:
                     this.moveQueue.push(undefined); // create an empty position in the list
-                    this.switchQueue.push({switchedOut: user, switchedIn: switchPicker(user, this)});
+                    this.switchQueue.push(switchPicker(user, this));
                     break;
                 case Action.RUN:
                     // early exit
@@ -197,10 +247,10 @@ export class Battle {
             user.ability.onTurnBeginning?.(user.ability, user, this);
 
             // apply effects (start of turn)
-            for (let i = 0; i < this.effects.length; i++) {
-                const effect = this.effects[i];
-                if (effect.target === user && effect.behaviour === Behaviour.START_OF_TURN)
-                    this.applyEffect(effect, i, order);
+            for (let i = 0; i < this.effectQueue.length; i++) {
+                const effectCommand = this.effectQueue[i];
+                if (effectCommand?.target === user && effectCommand?.effect.trigger === Trigger.START_OF_TURN)
+                    this.applyEffect(effectCommand, i, order);
             }
 
             // possible early exit (already won/lost)
@@ -219,7 +269,7 @@ export class Battle {
                     this.printEffectiveness(move, target);
                     if (target && target.health > 0) {
                         move.execute(move, user, target, this);
-                        target.lastHitBy = {move, user};
+                        target.lastHitBy = {move, attacker: user};
                     }
                     else console.log("But it failed!");
                 } else {
@@ -242,10 +292,13 @@ export class Battle {
         }
 
         // apply effects (end of turn)
-        for (let i = 0; i < this.effects.length; i++) {
-            const effect = this.effects[i];
-            if (effect.behaviour === Behaviour.END_OF_TURN)
-                this.applyEffect(effect, i, order);
+        for (let i = 0; i < this.effectQueue.length; i++) {
+            const effectCommand = this.effectQueue[i];
+            if (!effectCommand) continue;
+
+            const {effect} = effectCommand;
+            if (effectCommand?.effect.trigger === Trigger.END_OF_TURN)
+                this.applyEffect(effectCommand, i, order);
 
             if (effect.turn !== undefined) effect.turn++;
             effect.duration--;
@@ -272,10 +325,10 @@ export class Battle {
                 user.status = Status.FAINTED;
 
                 // apply effects (on death)
-                for (let i = 0; i < this.effects.length; i++) {
-                    const effect = this.effects[i];
-                    if (effect.user === user && effect.behaviour === Behaviour.ON_DEATH)
-                        this.applyEffect(effect, i, order);
+                for (let i = 0; i < this.effectQueue.length; i++) {
+                    const effectCommand = this.effectQueue[i];
+                    if (effectCommand?.user === user && effectCommand?.effect.trigger === Trigger.ON_DEATH)
+                        this.applyEffect(effectCommand, i, order);
                 }
 
                 // apply abilities (on death)

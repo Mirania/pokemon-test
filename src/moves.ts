@@ -2,7 +2,7 @@ import { Pokemon, Status, effective, effectiveAccuracy } from "./pokemon";
 import { Battle, Weather } from "./battle";
 import { random, limit } from "./utils";
 import { Type, Category, affinity } from "./types";
-import { effects, getEffect } from "./effects";
+import { effects, getEffect, createEffect } from "./effects";
 
 interface MoveData {
     name: string,
@@ -170,10 +170,10 @@ export const moves: Move[] = [
         category: Category.PHYSICAL,
         power: 70,
         accuracy: 100,
-        points: 1,
+        points: 20,
         execute(move, user, target, battle) {
             target.health -= calcDamage(move, user, target, battle);
-            if (random() <= 0.2) battle.addEffect(getEffect("Confusion"), user, target);
+            if (random() <= 1) battle.addEffect(getEffect("Confusion"), user, target);
         }
     },
     {
@@ -196,6 +196,22 @@ export const moves: Move[] = [
         points: 5,
         execute(move, user, target, battle) {
             battle.addEffect(getEffect("Destiny Bond"), user, target);
+        }
+    },
+    {
+        name: "Stealth Rock",
+        type: Type.ROCK,
+        category: Category.STATUS,
+        power: 0,
+        accuracy: Infinity,
+        points: 20,
+        execute(move, user, target, battle) {
+            if (battle.effectExists(getEffect("Stealth Rock"), user)) {
+                console.log("But it failed!");
+                return;
+            }
+
+            battle.addEffect(getEffect("Stealth Rock"), user);
         }
     }
 ];

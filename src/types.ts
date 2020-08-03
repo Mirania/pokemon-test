@@ -3,7 +3,7 @@ export enum Category {
 }
 
 export enum Type {
-    NORMAL, GRASS, WATER, FIRE, ELECTRIC, GROUND, FLYING, ICE
+    NORMAL, GRASS, WATER, FIRE, ELECTRIC, GROUND, FLYING, ICE, ROCK
 }
 
 /** 
@@ -11,15 +11,16 @@ export enum Type {
  * Row is the attacker, column is the defender.
  */
 const matrix: number[][] = [
-/*           Norm   Grass   Water   Fire    Elec    Grnd    Fly     Ice */
-/* Norm */  [1,     1,      1,      1,      1,      1,      1,      1   ],
-/* Grass */ [1,     0.5,    2,      0.5,    1,      2,      0.5,    1   ],
-/* Water */ [1,     0.5,    0.5,    2,      1,      2,      1,      1   ],
-/* Fire */  [1,     2,      0.5,    0.5,    1,      1,      1,      2   ],
-/* Elec */  [1,     0.5,    2,      1,      0.5,    0,      2,      1   ],
-/* Grnd */  [1,     0.5,    1,      2,      2,      1,      0,      1   ],
-/* Fly */   [1,     2,      1,      1,      0.5,    1,      1,      1   ],
-/* Ice */   [1,     2,      0.5,    1,      1,      2,      2,      0.5 ]
+/*           Norm   Grass   Water   Fire    Elec    Grnd    Fly     Ice     Rock*/
+/* Norm */  [1,     1,      1,      1,      1,      1,      1,      1,      0.5 ],
+/* Grass */ [1,     0.5,    2,      0.5,    1,      2,      0.5,    1,      2   ],
+/* Water */ [1,     0.5,    0.5,    2,      1,      2,      1,      1,      2   ],
+/* Fire */  [1,     2,      0.5,    0.5,    1,      1,      1,      2,      0.5 ],
+/* Elec */  [1,     0.5,    2,      1,      0.5,    0,      2,      1,      1   ],
+/* Grnd */  [1,     0.5,    1,      2,      2,      1,      0,      1,      2   ],
+/* Fly */   [1,     2,      1,      1,      0.5,    1,      1,      1,      0.5 ],
+/* Ice */   [1,     2,      0.5,    1,      1,      2,      2,      0.5,    1   ],
+/* Rock */  [1,     1,      1,      2,      1,      0.5,    2,      2,      1   ]
 ];
 
 /** Damage multiplier when attacking a certain type. Returns 1 if either type is undefined. */

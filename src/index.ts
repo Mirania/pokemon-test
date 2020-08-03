@@ -9,7 +9,7 @@ let team: Pokemon[] = [
         name: "Ally",
         gender: Gender.MALE,
         level: 85,
-        health: 2,
+        health: 200,
         attack: 100,
         defense: 100,
         spAttack: 100,
@@ -24,7 +24,7 @@ let team: Pokemon[] = [
         name: "Ally2",
         gender: Gender.MALE,
         level: 85,
-        health: 2,
+        health: 200,
         attack: 100,
         defense: 100,
         spAttack: 100,
@@ -32,7 +32,7 @@ let team: Pokemon[] = [
         speed: 91,
         primaryType: Type.NORMAL,
         ability: abilities[1],
-        moves: [getMove("Scratch")],
+        moves: [getMove("Blizzard")],
         team: Team.ALLY
     })
 ];
@@ -51,7 +51,7 @@ let enemy: Pokemon[] = [
         primaryType: Type.FIRE,
         secondaryType: Type.GRASS,
         ability: abilities[0],
-        moves: [getMove("Blaze Kick")],
+        moves: [getMove("Dizzy Punch")],
         team: Team.ENEMY
     })
 ];
